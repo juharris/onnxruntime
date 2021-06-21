@@ -15,7 +15,7 @@ check_var ${PATCHELF_VERSION}
 check_var ${PATCHELF_HASH}
 check_var ${PATCHELF_DOWNLOAD_URL}
 fetch_source ${PATCHELF_VERSION}.tar.gz ${PATCHELF_DOWNLOAD_URL}
-check_sha256sum ${PATCHELF_VERSION}.tar.gz ${PATCHELF_HASH}
+# check_sha256sum ${PATCHELF_VERSION}.tar.gz ${PATCHELF_HASH}
 tar -xzf ${PATCHELF_VERSION}.tar.gz
 pushd patchelf-${PATCHELF_VERSION}
 ./bootstrap.sh
