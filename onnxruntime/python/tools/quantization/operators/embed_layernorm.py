@@ -4,8 +4,10 @@ from ..quant_utils import attribute_to_kwarg, ms_domain
 from onnx import onnx_pb as onnx_proto
 
 '''
-Quantize EmbedLayerNormalization
-TODO(kreeger): Add more documentation here.
+Quantizes the EmbedLayerNorm fused ONNXRuntime Op.
+ 
+This Quant operator keeps the input and segment IDs at int32 but will quantize all initializer and
+weight inputs associated with the node to uint8.
 '''
 class EmbedLayerNormalizationQuant(QuantOperatorBase):
     def __init__(self, onnx_quantizer, onnx_node):
@@ -16,7 +18,7 @@ class EmbedLayerNormalizationQuant(QuantOperatorBase):
         assert (node.op_type == "EmbedLayerNormalization")
 
         '''
-        Pre-quantized inputs:
+        Pre-quantization EmbedLayerNorm inputs:
         [0] input_ids (int32)
         [1] segment_ids (int32)
         [2] word_embedding (float32)
@@ -26,18 +28,18 @@ class EmbedLayerNormalizationQuant(QuantOperatorBase):
         [6] layer_norm_bias (float32)
         [7] mask (int32) (optional)
         '''
-        # TODO(kreeger): what is the |reduce_range| flag here?
         (quantized_input_names, zero_point_names, scale_names, nodes) = \
             self.quantizer.quantize_inputs(node, [2, 3, 4, 5, 6])
 
-        # TODO(kreeger): Unit test for this (seems empty str in the unit test right now):
+        # TODO(kreeger): Write a unit test here for this one.
         qembed_layer_norm_name = "" if node.name == "" else node.name + "_quant"
 
+        #
         # TODO(kreeger): Check inputs for gamma/beta/mask with len(node.input) > N
+        #
 
-        inputs = []
         '''
-        Input Tensor List
+        Quantized Input Tensor List
         [0] input_ids (int32)
         [1] segment_ids (int32)
         [2] word_embedding (uint8)
@@ -45,19 +47,19 @@ class EmbedLayerNormalizationQuant(QuantOperatorBase):
         [4] segment_embedding (uint8)
         [5] layer_norm_weight (uint8) 
         [6] layer_norm_bias (uint8)
-        [7] word_embedding_scale
-        [8] position_embedding_scale
-        [9] segment_embedding_scale
-        [10] layer_norm_weights_scale
-        [11] layer_norm_bias_scale
-        [12] word_embedding_zero_point
-        [13] position_embedding_zero_point
-        [14] segment_embedding_zero_point
-        [15] layer_norm_weights_zero_point
-        [16] layer_norm_bias_zero_point
+        [7] word_embedding_scale (float)
+        [8] position_embedding_scale (float)
+        [9] segment_embedding_scale (float)
+        [10] layer_norm_weights_scale (float)
+        [11] layer_norm_bias_scale (float)
+        [12] word_embedding_zero_point (uint8)
+        [13] position_embedding_zero_point (uint8)
+        [14] segment_embedding_zero_point (uint8)
+        [15] layer_norm_weights_zero_point (uint8)
+        [16] layer_norm_bias_zero_point (uint8)
         [17] mask (int32) (optional)
         '''
-
+        inputs = []
         # 'input_ids'
         inputs.extend([node.input[0]])
         # 'segment_ids'

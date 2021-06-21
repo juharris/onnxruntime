@@ -93,6 +93,11 @@ class TestOpEmbedLayerNormalization(unittest.TestCase):
 
         onnx.save(model, model_path)
 
+    #
+    #
+    # TODO(kreeger): Update this unit test to handle the new quantization values!
+    #
+    #
     def test_quantize_batch_size_1(self):
         batch = 1
         hidden_size = 4
