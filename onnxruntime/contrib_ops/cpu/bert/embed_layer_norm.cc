@@ -2,14 +2,16 @@
 // Licensed under the MIT License.
 
 #include "embed_layer_norm.h"
-#include "embed_layer_norm_helper.h"
 #include "core/util/math_cpuonly.h"
 #include "core/platform/threadpool.h"
+
+#include "longformer_attention_base.h"
 
 #include <atomic>
 
 namespace onnxruntime {
 namespace contrib {
+
 // These ops are internal-only, so register outside of onnx
 #define REGISTER_KERNEL_TYPED(T)                                  \
   ONNX_OPERATOR_TYPED_KERNEL_EX(                                  \
@@ -24,6 +26,23 @@ namespace contrib {
 
 REGISTER_KERNEL_TYPED(float)
 
+Status LongformerAttentionBase__CheckInputs(const LongformerAttentionBase* p,
+                                            const TensorShape& input_shape,
+                                            const TensorShape& weights_shape,
+                                            const TensorShape& bias_shape,
+                                            const TensorShape& mask_shape,
+                                            const TensorShape& global_weights_shape,
+                                            const TensorShape& global_bias_shape,
+                                            const TensorShape& global_shape) {
+  return p->CheckInputs(input_shape,
+                        weights_shape,
+                        bias_shape,
+                        mask_shape,
+                        global_weights_shape,
+                        global_bias_shape,
+                        global_shape);
+}
+
 template <typename T>
 EmbedLayerNorm<T>::EmbedLayerNorm(const OpKernelInfo& op_kernel_info) : OpKernel(op_kernel_info) {
   ORT_ENFORCE(op_kernel_info.GetAttr<float>("epsilon", &epsilon_).IsOK());
@@ -31,26 +50,36 @@ EmbedLayerNorm<T>::EmbedLayerNorm(const OpKernelInfo& op_kernel_info) : OpKernel
 }
 
 template <typename T>
-Status EmbedLayerNorm<T>::Compute(OpKernelContext* context) const {
-  ORT_RETURN_IF_ERROR(embed_layer_norm::CheckInputs(context));
-  const Tensor* input_ids = context->Input<Tensor>(0);
-  const Tensor* segment_ids = context->Input<Tensor>(1);  // optional. nullptr if it's distill-bert
-  const Tensor* word_embedding = context->Input<Tensor>(2);
-  const Tensor* position_embedding = context->Input<Tensor>(3);
-  const Tensor* segment_embedding = context->Input<Tensor>(4);  // optional. nullptr if it's distill-bert
-  const Tensor* gamma = context->Input<Tensor>(5);
-  const Tensor* beta = context->Input<Tensor>(6);
-  const Tensor* mask = context->Input<Tensor>(7);  // optional. nullptr if not provided
+EmbedLayerNorm<T>::Inputs::Inputs(const Tensor* input_ids,
+                                  const Tensor* segment_ids,
+                                  const Tensor* word_embedding,
+                                  const Tensor* position_embedding,
+                                  const Tensor* segment_embedding,
+                                  const Tensor* gamma,
+                                  const Tensor* beta,
+                                  const Tensor* mask)
+    : input_ids(input_ids)
+    , segment_ids(segment_ids)
+    , word_embedding(word_embedding)
+    , position_embedding(position_embedding)
+    , segment_embedding(segment_embedding)
+    , gamma(gamma)
+    , beta(beta)
+    , mask(mask) {}
 
-  return ComputeInternal(context,
-                         input_ids,
-                         segment_ids,
-                         word_embedding,
-                         position_embedding,
-                         segment_embedding,
-                         gamma,
-                         beta,
-                         mask);
+template <typename T>
+Status EmbedLayerNorm<T>::Compute(OpKernelContext* context) const {
+  Inputs inputs(/*input_ids=*/context->Input<Tensor>(0),
+                /*segment_ids=*/context->Input<Tensor>(1),
+                /*word_embedding=*/context->Input<Tensor>(2),
+                /*position_embedding=*/context->Input<Tensor>(3),
+                /*segment_embedding=*/context->Input<Tensor>(4),
+                /*gamma=*/context->Input<Tensor>(5),
+                /*beta=*/context->Input<Tensor>(6),
+                /*mask=*/context->Input<Tensor>(7));
+
+  ORT_RETURN_IF_ERROR(CheckInputs(inputs));
+  return ComputeInternal(context, inputs);
 }
 
 //
@@ -58,16 +87,9 @@ Status EmbedLayerNorm<T>::Compute(OpKernelContext* context) const {
 //
 template <typename T>
 Status EmbedLayerNorm<T>::ComputeInternal(OpKernelContext* context,
-                                          const Tensor* input_ids,
-                                          const Tensor* segment_ids,
-                                          const Tensor* word_embedding,
-                                          const Tensor* position_embedding,
-                                          const Tensor* segment_embedding,
-                                          const Tensor* gamma,
-                                          const Tensor* beta,
-                                          const Tensor* mask) const {
-  const auto& input_dims = input_ids->Shape().GetDims();
-  int64_t hidden_size = word_embedding->Shape()[1];
+                                          const Inputs& inputs) const {
+  const auto& input_dims = inputs.input_ids->Shape().GetDims();
+  int64_t hidden_size = inputs.word_embedding->Shape()[1];
 
   TensorShape output_shape({input_dims[0], input_dims[1], hidden_size});
   Tensor* output = context->Output(0, output_shape);
@@ -78,19 +100,26 @@ Status EmbedLayerNorm<T>::ComputeInternal(OpKernelContext* context,
   int batch_size = static_cast<int>(input_dims[0]);
   int sequence_length = static_cast<int>(input_dims[1]);
 
-  int word_embedding_length = static_cast<int>(word_embedding->Shape()[0]);
-  int position_embedding_length = static_cast<int>(position_embedding->Shape()[0]);
-  int segment_embedding_length = (nullptr == segment_embedding) ? 0 : static_cast<int>(segment_embedding->Shape()[0]);
+  int word_embedding_length = static_cast<int>(inputs.word_embedding->Shape()[0]);
+  int position_embedding_length = static_cast<int>(inputs.position_embedding->Shape()[0]);
 
-  const int32_t* input_ids_data = input_ids->template Data<int32_t>();
-  const int32_t* segment_ids_data = (nullptr == segment_ids) ? nullptr : segment_ids->template Data<int32_t>();
+  //
+  // TODO(kreeger): Add some comment about distll-bert allowing no segment embeddings.
+  //
+  int segment_embedding_length =
+    (nullptr == inputs.segment_embedding) ? 0 : static_cast<int>(inputs.segment_embedding->Shape()[0]);
+
+  const int32_t* input_ids_data = inputs.input_ids->template Data<int32_t>();
+  const int32_t* segment_ids_data =
+    (nullptr == inputs.segment_ids) ? nullptr : inputs.segment_ids->template Data<int32_t>();
 
   // TODO - need to specify non-float32 here.
-  const T* word_embedding_data = word_embedding->template Data<T>();
-  const T* position_embedding_data = position_embedding->template Data<T>();
-  const T* segment_embedding_data = (nullptr == segment_embedding) ? nullptr : segment_embedding->template Data<T>();
-  const T* gamma_data = gamma->template Data<T>();
-  const T* beta_data = beta->template Data<T>();
+  const T* word_embedding_data = inputs.word_embedding->template Data<T>();
+  const T* position_embedding_data = inputs.position_embedding->template Data<T>();
+  const T* segment_embedding_data =
+    (nullptr == inputs.segment_embedding) ? nullptr : inputs.segment_embedding->template Data<T>();
+  const T* gamma_data = inputs.gamma->template Data<T>();
+  const T* beta_data = inputs.beta->template Data<T>();
   T* output_data = output->template MutableData<T>();
 
   // Calculate output
@@ -150,8 +179,8 @@ Status EmbedLayerNorm<T>::ComputeInternal(OpKernelContext* context,
   }
 
   // Calculate mask
-  if (nullptr != mask) {
-    const int32_t* mask_data = mask->template Data<int32_t>();
+  if (nullptr != inputs.mask) {
+    const int32_t* mask_data = inputs.mask->template Data<int32_t>();
     for (int b = 0; b < batch_size; b++) {
       mask_index->template MutableData<int32_t>()[b] = static_cast<int32_t>(std::count_if(mask_data + (b * sequence_length),
                                                                                           mask_data + (b * sequence_length) + sequence_length,
@@ -159,6 +188,78 @@ Status EmbedLayerNorm<T>::ComputeInternal(OpKernelContext* context,
     }
   } else {
     memset(mask_index->template MutableData<int32_t>(), 0, batch_size * sizeof(int32_t));
+  }
+
+  return Status::OK();
+}
+
+template <typename T>
+Status EmbedLayerNorm<T>::CheckInputs(const Inputs& inputs) const {
+  if (nullptr != inputs.segment_ids && inputs.input_ids->Shape() != inputs.segment_ids->Shape()) {
+    return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_ARGUMENT,
+                           "Input 0 and 1 shall have same shape");
+  }
+
+  if (nullptr != inputs.mask && inputs.input_ids->Shape() != inputs.mask->Shape()) {
+    return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_ARGUMENT,
+                           "Input 0 and 7 (mask) shall have same shape");
+  }
+
+  const auto& input_dims = inputs.input_ids->Shape().GetDims();
+  if (input_dims.size() != 2) {
+    return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_ARGUMENT,
+                           "input_ids is expected to have 2 dimensions, got ", input_dims.size());
+  }
+
+  const auto& word_embedding_dims = inputs.word_embedding->Shape().GetDims();
+  if (word_embedding_dims.size() != 2) {
+    return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_ARGUMENT,
+                           "word_embedding is expected to have 2 dimensions, got ", word_embedding_dims.size());
+  }
+
+  const auto& position_embedding_dims = inputs.position_embedding->Shape().GetDims();
+  if (position_embedding_dims.size() != 2) {
+    return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_ARGUMENT,
+                           "position_embedding is expected to have 2 dimensions, got ", position_embedding_dims.size());
+  }
+
+  if (nullptr != inputs.segment_embedding) {
+    const auto& segment_embedding_dims = inputs.segment_embedding->Shape().GetDims();
+    if (segment_embedding_dims.size() != 2) {
+      return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_ARGUMENT,
+                             "segment_embedding is expected to have 2 dimensions, got ", segment_embedding_dims.size());
+    }
+    if (word_embedding_dims[1] != segment_embedding_dims[1]) {
+      return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_ARGUMENT,
+                             "word_embedding and segment_embedding shall have same dimension 1");
+    }
+  }
+
+  if (word_embedding_dims[1] != position_embedding_dims[1]) {
+    return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_ARGUMENT,
+                           "word_embedding and position_embedding shall have same dimension 1");
+  }
+
+  const auto& beta_dims = inputs.beta->Shape().GetDims();
+  if (beta_dims.size() != 1) {
+    return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_ARGUMENT,
+                           "beta is expected to have 1 dimensions, got ", beta_dims.size());
+  }
+
+  if (beta_dims[0] != word_embedding_dims[1]) {
+    return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_ARGUMENT,
+                           "beta is expected to have size of ", word_embedding_dims[1], ", got ", beta_dims[0]);
+  }
+
+  const auto& gamma_dims = inputs.gamma->Shape().GetDims();
+  if (gamma_dims.size() != 1) {
+    return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_ARGUMENT,
+                           "gamma is expected to have 1 dimensions, got ", gamma_dims.size());
+  }
+
+  if (gamma_dims[0] != word_embedding_dims[1]) {
+    return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_ARGUMENT,
+                           "gamma is expected to have size of ", word_embedding_dims[1], ", got ", gamma_dims[0]);
   }
 
   return Status::OK();

@@ -48,9 +48,12 @@ static void RunTest(const embedlayernorm::OpData& data,
 
   float segment_embedding_scale = 0.0f;
   uint8_t segment_embedding_zero_point = 0;
-  std::vector<uint8_t> segment_embedding_data_quant =
-      QuantizeLinear<uint8_t, /*symmetric=*/false>(
-          data.segment_embedding_data, segment_embedding_scale, segment_embedding_zero_point);
+  std::vector<uint8_t> segment_embedding_data_quant;
+  if (data.has_segment) {
+    segment_embedding_data_quant =
+        QuantizeLinear<uint8_t, /*symmetric=*/false>(
+            data.segment_embedding_data, segment_embedding_scale, segment_embedding_zero_point);
+  }
 
   float gamma_scale = 0.0f;
   uint8_t gamma_zero_point = 0;
@@ -68,7 +71,11 @@ static void RunTest(const embedlayernorm::OpData& data,
 
   // Operator inputs passed in at int32_t:
   tester.AddInput<int32_t>("input_ids", input_ids_dims, data.input_ids_data);
-  tester.AddInput<int32_t>("segment_ids", segment_ids_dims, data.segment_ids_data);
+  if (data.has_segment) {
+    tester.AddInput<int32_t>("segment_ids", segment_ids_dims, data.segment_ids_data);
+  } else {
+    tester.AddMissingOptionalInput<int32_t>();
+  }
 
   // Quantized initializer inputs:
   tester.AddInput<uint8_t>("word_embedding_data",
@@ -77,9 +84,13 @@ static void RunTest(const embedlayernorm::OpData& data,
   tester.AddInput<uint8_t>("position_embedding_data",
                            position_embedding_dims,
                            position_embedding_data_quant);
-  tester.AddInput<uint8_t>("segment_embedding_data",
-                           segment_embedding_dims,
-                           segment_embedding_data_quant);
+  if (data.has_segment) {
+    tester.AddInput<uint8_t>("segment_embedding_data",
+                             segment_embedding_dims,
+                             segment_embedding_data_quant);
+  } else {
+    tester.AddMissingOptionalInput<uint8_t>();
+  }
   tester.AddInput<uint8_t>("gamma",
                            gamma_dims,
                            gamma_data_quant);
@@ -94,9 +105,13 @@ static void RunTest(const embedlayernorm::OpData& data,
   tester.AddInput<float>("position_embedding_scale",
                          /*dims=*/{},
                          {position_embedding_scale});
-  tester.AddInput<float>("segment_embedding_scale",
-                         /*dims=*/{},
-                         {segment_embedding_scale});
+  if (data.has_segment) {
+    tester.AddInput<float>("segment_embedding_scale",
+                           /*dims=*/{},
+                           {segment_embedding_scale});
+  } else {
+    tester.AddMissingOptionalInput<float>();
+  }
   tester.AddInput<float>("gamma_scale",
                          /*dims=*/{},
                          {gamma_scale});
@@ -111,9 +126,13 @@ static void RunTest(const embedlayernorm::OpData& data,
   tester.AddInput<uint8_t>("position_embedding_zero_point",
                            /*dims=*/{},
                            {position_embedding_zero_point});
-  tester.AddInput<uint8_t>("segment_embedding_zero_point",
-                           /*dims=*/{},
-                           {segment_embedding_zero_point});
+  if (data.has_segment) {
+    tester.AddInput<uint8_t>("segment_embedding_zero_point",
+                             /*dims=*/{},
+                             {segment_embedding_zero_point});
+  } else {
+    tester.AddMissingOptionalInput<uint8_t>();
+  }
   tester.AddInput<uint8_t>("gamma_zero_point",
                            /*dims=*/{},
                            {gamma_zero_point});
@@ -165,8 +184,7 @@ TEST(QEmbedLayerNormTest, EmbedLayerNormLargeBatchSmallHiddenSize) {
 }
 
 TEST(QEmbedLayerNormTest, EmbedLayerNormBatch_Distill) {
-  // TODO(kreeger): Fix this test!
-  //RunTest(embedlayernorm::EmbedLayerNormBatch_Distill());
+  RunTest(embedlayernorm::EmbedLayerNormBatch_Distill());
 }
 
 }  // namespace test

@@ -5,7 +5,6 @@
 
 #include <cmath>
 
-#include "embed_layer_norm_helper.h"
 #include "core/framework/op_kernel.h"
 #include "core/providers/common.h"
 
@@ -49,9 +48,45 @@ QEmbedLayerNorm<T>::QEmbedLayerNorm(const OpKernelInfo& op_kernel_info)
 }
 
 template <typename T>
-Status QEmbedLayerNorm<T>::Compute(OpKernelContext* context) const {
-  ORT_RETURN_IF_ERROR(embed_layer_norm::CheckQuantizedInputs(context));
+QEmbedLayerNorm<T>::QInputs::QInputs(const Tensor* input_ids,
+                                     const Tensor* segment_ids,
+                                     const Tensor* word_embedding,
+                                     const Tensor* position_embedding,
+                                     const Tensor* segment_embedding,
+                                     const Tensor* gamma,
+                                     const Tensor* beta,
+                                     const Tensor* word_embedding_scale,
+                                     const Tensor* position_embedding_scale,
+                                     const Tensor* segment_embedding_scale,
+                                     const Tensor* gamma_scale,
+                                     const Tensor* beta_scale,
+                                     const Tensor* word_embedding_zero_point,
+                                     const Tensor* position_embedding_zero_point,
+                                     const Tensor* segment_embedding_zero_point,
+                                     const Tensor* gamma_zero_point,
+                                     const Tensor* beta_zero_point,
+                                     const Tensor* mask)
+    : Inputs(input_ids,
+             segment_ids,
+             word_embedding,
+             position_embedding,
+             segment_embedding,
+             gamma,
+             beta,
+             mask)
+    , word_embedding_scale(word_embedding_scale)
+    , position_embedding_scale(position_embedding_scale)
+    , segment_embedding_scale(segment_embedding_scale)
+    , gamma_scale(gamma_scale)
+    , beta_scale(beta_scale)
+    , word_embedding_zero_point(word_embedding_zero_point)
+    , position_embedding_zero_point(position_embedding_zero_point)
+    , segment_embedding_zero_point(segment_embedding_zero_point)
+    , gamma_zero_point(gamma_zero_point)
+    , beta_zero_point(beta_zero_point) {}
 
+template <typename T>
+Status QEmbedLayerNorm<T>::Compute(OpKernelContext* context) const {
   /*
   Input Tensors List:
   [0] input_ids (int32)
@@ -73,16 +108,67 @@ Status QEmbedLayerNorm<T>::Compute(OpKernelContext* context) const {
   [16] beta_zero_point (uint8)
   [17] mask (int32) (optional)
   */
-  // TODO(kreeger): Handle other optional tensor inputs here.
-  const Tensor* input_ids = context->Input<Tensor>(0);
-  const Tensor* segment_ids = context->Input<Tensor>(1);   // TODO can be optional
-  const Tensor* word_embedding = context->Input<Tensor>(2);
-  const Tensor* position_embedding = context->Input<Tensor>(3);
-  const Tensor* segment_embedding = context->Input<Tensor>(4);  // TODO can be optional
-  const Tensor* gamma = context->Input<Tensor>(5);
-  const Tensor* beta = context->Input<Tensor>(6);
-  const Tensor* mask = context->Input<Tensor>(17);  // optional. nullptr if not provided
+  QInputs inputs(/*input_ids=*/context->Input<Tensor>(0),
+                 /*segment_ids=*/context->Input<Tensor>(1),
+                 /*word_embedding=*/context->Input<Tensor>(2),
+                 /*position_embedding=*/context->Input<Tensor>(3),
+                 /*segment_embedding=*/context->Input<Tensor>(4),
+                 /*gamma=*/context->Input<Tensor>(5),
+                 /*beta=*/context->Input<Tensor>(6),
+                 /*word_embedding_scale=*/context->Input<Tensor>(7),
+                 /*position_embedding_scaled=*/context->Input<Tensor>(8),
+                 /*segment_embedding_scale=*/context->Input<Tensor>(9),
+                 /*gamma_scale=*/context->Input<Tensor>(10),
+                 /*beta_scale=*/context->Input<Tensor>(11),
+                 /*word_embedding_zero_point=*/context->Input<Tensor>(12),
+                 /*position_embedding_zero_point=*/context->Input<Tensor>(13),
+                 /*segment_embedding_zero_point=*/context->Input<Tensor>(14),
+                 /*gamma_zero_point=*/context->Input<Tensor>(15),
+                 /*beta_zero_point=*/context->Input<Tensor>(16),
+                 /*mask=*/context->Input<Tensor>(17));
 
+  ORT_RETURN_IF_ERROR(CheckInputs(inputs));
+  //
+  // TODO(kreeger): Need to make everything run refactored here!
+  //
+  return Status::OK();
+}
+
+template <typename T>
+Status QEmbedLayerNorm<T>::CheckInputs(const QInputs& inputs) const {
+  ORT_RETURN_IF_ERROR(EmbedLayerNorm<T>::CheckInputs(inputs));
+
+  /*
+  ORT_RETURN_IF_NOT(IsScalarOr1ElementVector(context->Input<Tensor>(7)),
+      "Word embedding scale must be a scalar or 1D tensor of size 1");
+  ORT_RETURN_IF_NOT(IsScalarOr1ElementVector(context->Input<Tensor>(8)),
+      "Position embedding scale must be a scalar or 1D tensor of size 1");
+  ORT_RETURN_IF_NOT(IsScalarOr1ElementVector(context->Input<Tensor>(9)),
+      "Segment embedding scale must be a scalar or 1D tensor of size 1");
+  ORT_RETURN_IF_NOT(IsScalarOr1ElementVector(context->Input<Tensor>(10)),
+      "Layer norm weights scale must be a scalar or 1D tensor of size 1");
+  ORT_RETURN_IF_NOT(IsScalarOr1ElementVector(context->Input<Tensor>(11)),
+      "Layer norm bias must be a scalar or 1D tensor of size 1");
+  ORT_RETURN_IF_NOT(IsScalarOr1ElementVector(context->Input<Tensor>(12)),
+      "Word embedding zero point must be a scalar or 1D tensor of size 1");
+  ORT_RETURN_IF_NOT(IsScalarOr1ElementVector(context->Input<Tensor>(13)),
+      "Position embedding zero point must be a scalar or 1D tensor of size 1");
+  ORT_RETURN_IF_NOT(IsScalarOr1ElementVector(context->Input<Tensor>(14)),
+      "Segment embedding zero point must be a scalar or 1D tensor of size 1");
+  ORT_RETURN_IF_NOT(IsScalarOr1ElementVector(context->Input<Tensor>(15)),
+      "Layer norm weights zero point must be a scalar or 1D tensor of size 1");
+  ORT_RETURN_IF_NOT(IsScalarOr1ElementVector(context->Input<Tensor>(16)),
+      "Layer norm bias zero point must be a scalar or 1D tensor of size 1");
+      */
+
+  return Status::OK();
+}
+
+template <typename T>
+Status QEmbedLayerNorm<T>::ComputeInternal(OpKernelContext* context, const QInputs& inputs) const {
+  //
+  // TODO(kreeger): write me!
+  //
   // Determine shapes
   const auto& input_dims = input_ids->Shape().GetDims();
   int64_t hidden_size = word_embedding->Shape()[1];
@@ -234,7 +320,6 @@ Status QEmbedLayerNorm<T>::Compute(OpKernelContext* context) const {
   } else {
     memset(mask_index->template MutableData<int32_t>(), 0, batch_size * sizeof(int32_t));
   }
-
   return Status::OK();
 }
 
