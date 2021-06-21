@@ -24,8 +24,8 @@ class EmbedLayerNormalizationQuant(QuantOperatorBase):
         [2] word_embedding (float32)
         [3] position_embedding (float32)
         [4] segment_embedding (float32)
-        [5] layer_norm_weight (float32) 
-        [6] layer_norm_bias (float32)
+        [5] gamma (float32) 
+        [6] beta (float32)
         [7] mask (int32) (optional)
         '''
         (quantized_input_names, zero_point_names, scale_names, nodes) = \
@@ -50,13 +50,13 @@ class EmbedLayerNormalizationQuant(QuantOperatorBase):
         [7] word_embedding_scale (float)
         [8] position_embedding_scale (float)
         [9] segment_embedding_scale (float)
-        [10] layer_norm_weights_scale (float)
-        [11] layer_norm_bias_scale (float)
+        [10] gamma_scale (float)
+        [11] beta_scale (float)
         [12] word_embedding_zero_point (uint8)
         [13] position_embedding_zero_point (uint8)
         [14] segment_embedding_zero_point (uint8)
-        [15] layer_norm_weights_zero_point (uint8)
-        [16] layer_norm_bias_zero_point (uint8)
+        [15] gamma_zero_point (uint8)
+        [16] beta_zero_point (uint8)
         [17] mask (int32) (optional)
         '''
         inputs = []
@@ -70,9 +70,9 @@ class EmbedLayerNormalizationQuant(QuantOperatorBase):
         inputs.extend([quantized_input_names[1]])
         # 'segment_embedding_quant'
         inputs.extend([quantized_input_names[2]])
-        # 'layer_norm_weights_quant'
+        # 'gamma_quant'
         inputs.extend([quantized_input_names[3]])
-        # 'layer_norm_bias_quant'
+        # 'beta_quant'
         inputs.extend([quantized_input_names[4]])
 
         # Add all scales:
