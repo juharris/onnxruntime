@@ -56,7 +56,7 @@ Status QEmbedLayerNorm<T>::Compute(OpKernelContext* context) const {
   /*
   Input Tensors List:
   [0] input_ids
-  [1] segment_ids
+  [1] segment_ids (optional)
   [2] word_embedding_quant
   [3] position_embedding_quant
   [4] segment_embedding_quant
@@ -64,28 +64,27 @@ Status QEmbedLayerNorm<T>::Compute(OpKernelContext* context) const {
   [6] layer_norm_bias_quant
   [7] word_embedding_scale
   [8] position_embedding_scale
-  [9] segment_embedding_scale
-  [10] layer_norm_weights_scale
-  [11] layer_norm_bias_scale
+  [9] segment_embedding_scale (optional)
+  [10] gamma_scale
+  [11] beta_scale
   [12] word_embedding_zero_point
   [13] position_embedding_zero_point
-  [14] segment_embedding_zero_point
-  [15] layer_norm_weights_zero_point
-  [16] layer_norm_bias_zero_point
+  [14] segment_embedding_zero_point (optional)
+  [15] gamma_zero_point
+  [16] beta_zero_point
   [17] mask (int32) (optional)
   */
   // TODO(kreeger): Handle other optional tensor inputs here.
   const Tensor* input_ids = context->Input<Tensor>(0);
-  const Tensor* segment_ids = context->Input<Tensor>(1);
+  const Tensor* segment_ids = context->Input<Tensor>(1);   // TODO can be optional
   const Tensor* word_embedding = context->Input<Tensor>(2);
   const Tensor* position_embedding = context->Input<Tensor>(3);
-  const Tensor* segment_embedding = context->Input<Tensor>(4);
-  const Tensor* layer_norm_weights = context->Input<Tensor>(5);
-  const Tensor* layer_norm_bias = context->Input<Tensor>(6);
+  const Tensor* segment_embedding = context->Input<Tensor>(4);  // TODO can be optional
+  const Tensor* gamma = context->Input<Tensor>(5);
+  const Tensor* beta = context->Input<Tensor>(6);
   const Tensor* mask = context->Input<Tensor>(17);  // optional. nullptr if not provided
 
   // Determine shapes
-  // TODO(kreeger): Refactor these bits with the f32 op.
   const auto& input_dims = input_ids->Shape().GetDims();
   int64_t hidden_size = word_embedding->Shape()[1];
 
@@ -104,6 +103,7 @@ Status QEmbedLayerNorm<T>::Compute(OpKernelContext* context) const {
   float position_embedding_scale = GetQuantizedInputTensorValue<float>(context, 8);
   uint8_t position_embedding_zero_point = GetQuantizedInputTensorValue<uint8_t>(context, 13);
 
+  // TODO - this can be optional as well!
   float segment_embedding_scale = GetQuantizedInputTensorValue<float>(context, 9);
   uint8_t segment_embedding_zero_point = GetQuantizedInputTensorValue<uint8_t>(context, 14);
 
@@ -135,8 +135,8 @@ Status QEmbedLayerNorm<T>::Compute(OpKernelContext* context) const {
   // TODO(kreeger): Handle missing segment_embedding_data with the quantization params too?
   const uint8_t* segment_embedding_data =
       (nullptr == segment_embedding) ? nullptr : segment_embedding->template Data<uint8_t>();
-  const uint8_t* layer_norm_weights_data = layer_norm_weights->template Data<uint8_t>();
-  const uint8_t* layer_norm_bias_data = layer_norm_bias->template Data<uint8_t>();
+  const uint8_t* gamma_data = gamma->template Data<uint8_t>();
+  const uint8_t* beta_data = beta->template Data<uint8_t>();
 
   T* output_data = output->template MutableData<T>();
 
@@ -208,13 +208,13 @@ Status QEmbedLayerNorm<T>::Compute(OpKernelContext* context) const {
 
       T e = sqrt(sum / hidden_size + static_cast<T>(epsilon_));
       for (int i = 0; i < hidden_size; i++) {
-        T cur_weight = Dequantize(layer_norm_weights_data[i],
+        T cur_gamma = Dequantize(gamma_data[i],
                                   layer_norm_weights_scale,
                                   layer_norm_weights_zero_point);
-        T cur_bias = Dequantize(layer_norm_bias_data[i],
+        T cur_beta = Dequantize(beta_data[i],
                                 layer_norm_bias_scale,
                                 layer_norm_bias_zero_point);
-        output[i] = output[i] / e * cur_weight + cur_bias;
+        output[i] = output[i] / e * cur_gamma + cur_beta;
       }
     }, 0);
 

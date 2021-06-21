@@ -29,8 +29,8 @@ static void RunTest(const embedlayernorm::OpData& data,
     std::vector<int64_t> segment_embedding_dims = {
         static_cast<int64_t>(data.segment_embedding_data.size() / data.hidden_size),
         data.hidden_size};
-  std::vector<int64_t> layer_norm_weight_dims = {data.hidden_size};
-  std::vector<int64_t> layer_norm_bias_dims = {data.hidden_size};
+  std::vector<int64_t> gamma_dims = {data.hidden_size};
+  std::vector<int64_t> beta_dims = {data.hidden_size};
   std::vector<int64_t> output_dims = {data.batch_size, data.sequence_size, data.hidden_size};
   std::vector<int64_t> mask_index_dims = {data.batch_size};
 
@@ -52,17 +52,17 @@ static void RunTest(const embedlayernorm::OpData& data,
       QuantizeLinear<uint8_t, /*symmetric=*/false>(
           data.segment_embedding_data, segment_embedding_scale, segment_embedding_zero_point);
 
-  float layer_norm_weight_scale = 0.0f;
-  uint8_t layer_norm_weight_zero_point = 0;
-  std::vector<uint8_t> layer_norm_weight_data_quant =
+  float gamma_scale = 0.0f;
+  uint8_t gamma_zero_point = 0;
+  std::vector<uint8_t> gamma_data_quant =
       QuantizeLinear<uint8_t, /*symmetric=*/false>(
-          data.gamma_data, layer_norm_weight_scale, layer_norm_weight_zero_point);
+          data.gamma_data, gamma_scale, gamma_zero_point);
 
-  float layer_norm_bias_scale = 0.0f;
-  uint8_t layer_norm_bias_zero_point = 0;
-  std::vector<uint8_t> layer_norm_bias_data_quant =
+  float beta_scale = 0.0f;
+  uint8_t beta_zero_point = 0;
+  std::vector<uint8_t> beta_data_quant =
       QuantizeLinear<uint8_t, /*symmetric=*/false>(
-          data.beta_data, layer_norm_bias_scale, layer_norm_bias_zero_point);
+          data.beta_data, beta_scale, beta_zero_point);
 
   OpTester tester("QEmbedLayerNormalization", 1, onnxruntime::kMSDomain);
 
@@ -80,12 +80,12 @@ static void RunTest(const embedlayernorm::OpData& data,
   tester.AddInput<uint8_t>("segment_embedding_data",
                            segment_embedding_dims,
                            segment_embedding_data_quant);
-  tester.AddInput<uint8_t>("layer_norm_weight",
-                           layer_norm_weight_dims,
-                           layer_norm_weight_data_quant);
-  tester.AddInput<uint8_t>("layer_norm_bias",
-                           layer_norm_bias_dims,
-                           layer_norm_bias_data_quant);
+  tester.AddInput<uint8_t>("gamma",
+                           gamma_dims,
+                           gamma_data_quant);
+  tester.AddInput<uint8_t>("beta",
+                           beta_dims,
+                           beta_data_quant);
 
   // Quantized scales:
   tester.AddInput<float>("word_embedding_scale",
@@ -97,12 +97,12 @@ static void RunTest(const embedlayernorm::OpData& data,
   tester.AddInput<float>("segment_embedding_scale",
                          /*dims=*/{},
                          {segment_embedding_scale});
-  tester.AddInput<float>("layer_norm_weight_scale",
+  tester.AddInput<float>("gamma_scale",
                          /*dims=*/{},
-                         {layer_norm_weight_scale});
-  tester.AddInput<float>("layer_norm_bias_scale",
+                         {gamma_scale});
+  tester.AddInput<float>("beta_scale",
                          /*dims=*/{},
-                         {layer_norm_bias_scale});
+                         {beta_scale});
 
   // Quantized zero points:
   tester.AddInput<uint8_t>("word_embedding_zero_point",
@@ -114,12 +114,12 @@ static void RunTest(const embedlayernorm::OpData& data,
   tester.AddInput<uint8_t>("segment_embedding_zero_point",
                            /*dims=*/{},
                            {segment_embedding_zero_point});
-  tester.AddInput<uint8_t>("layer_norm_weight_zero_point",
+  tester.AddInput<uint8_t>("gamma_zero_point",
                            /*dims=*/{},
-                           {layer_norm_weight_zero_point});
-  tester.AddInput<uint8_t>("layer_norm_bias_zero_point",
+                           {gamma_zero_point});
+  tester.AddInput<uint8_t>("beta_zero_point",
                            /*dims=*/{},
-                           {layer_norm_bias_zero_point});
+                           {beta_zero_point});
 
   if (data.has_mask) {
     std::vector<int64_t> mask_dims = {data.batch_size, data.sequence_size};
