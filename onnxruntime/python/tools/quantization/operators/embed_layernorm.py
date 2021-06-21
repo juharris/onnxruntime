@@ -93,8 +93,6 @@ class EmbedLayerNormalizationQuant(QuantOperatorBase):
         if len(node.input) > 7:
             inputs.extend([node.input[7]])
 
-        print(inputs)
-
         kwargs = {}
         for attribute in node.attribute:
             kwargs.update(attribute_to_kwarg(attribute))

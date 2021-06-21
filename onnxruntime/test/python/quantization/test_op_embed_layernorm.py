@@ -93,11 +93,6 @@ class TestOpEmbedLayerNormalization(unittest.TestCase):
 
         onnx.save(model, model_path)
 
-    #
-    #
-    # TODO(kreeger): Update this unit test to handle the new quantization values!
-    #
-    #
     def test_quantize_batch_size_1(self):
         batch = 1
         hidden_size = 4
@@ -115,7 +110,8 @@ class TestOpEmbedLayerNormalization(unittest.TestCase):
 
         quantize_dynamic(model_f32_path, model_uint8_path)
 
-        qnode_counts = {'DequantizeLinear': 3}
+        # Quantization should not have any DequantizeLinear nodes:
+        qnode_counts = {'DequantizeLinear': 0, 'QEmbedLayerNormalization': 1}
         check_op_type_count(self, model_uint8_path, **qnode_counts)
         data_reader.rewind()
 
@@ -138,7 +134,8 @@ class TestOpEmbedLayerNormalization(unittest.TestCase):
 
         quantize_dynamic(model_f32_path, model_uint8_path)
 
-        qnode_counts = {'DequantizeLinear': 3}
+        # Quantization should not have any DequantizeLinear nodes:
+        qnode_counts = {'DequantizeLinear': 0, 'QEmbedLayerNormalization': 1}
         check_op_type_count(self, model_uint8_path, **qnode_counts)
         data_reader.rewind()
 
