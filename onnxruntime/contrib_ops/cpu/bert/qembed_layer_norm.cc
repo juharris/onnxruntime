@@ -52,26 +52,25 @@ template <typename T>
 Status QEmbedLayerNorm<T>::Compute(OpKernelContext* context) const {
   ORT_RETURN_IF_ERROR(embed_layer_norm::CheckQuantizedInputs(context));
 
-  // TODO(kreeger): Move verbose descriptions here.
   /*
   Input Tensors List:
-  [0] input_ids
-  [1] segment_ids (optional)
-  [2] word_embedding_quant
-  [3] position_embedding_quant
-  [4] segment_embedding_quant
-  [5] layer_norm_weight_quant
-  [6] layer_norm_bias_quant
-  [7] word_embedding_scale
-  [8] position_embedding_scale
-  [9] segment_embedding_scale (optional)
-  [10] gamma_scale
-  [11] beta_scale
-  [12] word_embedding_zero_point
-  [13] position_embedding_zero_point
-  [14] segment_embedding_zero_point (optional)
-  [15] gamma_zero_point
-  [16] beta_zero_point
+  [0] input_ids (int32)
+  [1] segment_ids (int32) (optional)
+  [2] word_embedding_quant (uint8)
+  [3] position_embedding_quant (uint8)
+  [4] segment_embedding_quant (uint8)
+  [5] gamma_quant (uint8)
+  [6] beta_quant (uint8)
+  [7] word_embedding_scale (float)
+  [8] position_embedding_scale (float)
+  [9] segment_embedding_scale (float) (optional)
+  [10] gamma_scale (float)
+  [11] beta_scale (float)
+  [12] word_embedding_zero_point (uint8)
+  [13] position_embedding_zero_point (uint8)
+  [14] segment_embedding_zero_point (uint8) (optional)
+  [15] gamma_zero_point (uint8)
+  [16] beta_zero_point (uint8)
   [17] mask (int32) (optional)
   */
   // TODO(kreeger): Handle other optional tensor inputs here.
@@ -113,11 +112,10 @@ Status QEmbedLayerNorm<T>::Compute(OpKernelContext* context) const {
   float layer_norm_bias_scale = GetQuantizedInputTensorValue<float>(context, 11);
   uint8_t layer_norm_bias_zero_point = GetQuantizedInputTensorValue<uint8_t>(context, 16);
   
-  // TODO(kreeger): Move verbose descriptions here.
   /*
   Output Tensors List:
-  [0] layernorm_out
-  [1] mask_index_out
+  [0] layernorm_out (T)
+  [1] mask_index_out (int32)
   */
   TensorShape output_shape({input_dims[0], input_dims[1], hidden_size});
   Tensor* output = context->Output(0, output_shape);

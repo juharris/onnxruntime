@@ -15,8 +15,7 @@ constexpr float kEpsilon = 1e-12f;
 // utility class helps readability of Op unit tests by wrapping Op data.
 class OpData {
  public:
-  // TODO - mark explicit?
-  OpData(
+  explicit OpData(
       int batch_size,
       int sequence_size,
       int hidden_size,
