@@ -16,7 +16,6 @@ class EmbedLayerNorm : public OpKernel {
   Status Compute(OpKernelContext* context) const override;
 
  protected:
-   // TODO - better name than T2
   Status ComputeInternal(OpKernelContext* context,
                          const Tensor* input_ids,
                          const Tensor* segment_ids,
